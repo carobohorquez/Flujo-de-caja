@@ -1,0 +1,790 @@
+WITH cartera AS (
+SELECT
+  nid||"_"||monto  AS llave,
+  SAFE_CAST(fecha AS DATE FORMAT 'yyyy-mm-dd') AS fecha,
+  nid,
+  monto, 
+  concepto,
+  asiento,
+  observacion,
+  'wompi' AS hoja
+FROM
+`clients-domain-data-master.finance_sheet_global.finance_movimiento_ingresos_2024`
+
+
+UNION ALL 
+
+SELECT
+    nid||"_"||valor  AS llave,
+    SAFE_CAST(fecha AS DATE FORMAT 'yyyy-mm-dd') AS fecha,
+    nid,
+    valor AS  monto, 
+    concepto,
+    numero_asiento AS asiento,
+    observacion,
+    '9391'
+FROM
+`clients-domain-data-master.finance_sheet_global.finance_movimiento_ingresos_9391_co` 
+
+
+
+UNION ALL 
+
+SELECT
+  nid||"_"||monto  AS llave,
+  SAFE_CAST(fecha AS DATE FORMAT 'yyyy-mm-dd') AS  fecha,
+  nid,
+  monto, 
+  concepto,
+  asiento,
+  observacion,
+  'bancol'
+
+FROM
+`clients-domain-data-master.finance_sheet_global.finance_movimiento_ingresos_bancol_co` a
+
+) 
+
+
+
+
+
+,base_flujo_caja AS (
+  SELECT 
+      num,
+      cuenta,
+      SAFE_CAST(fecha_ope  AS DATE FORMAT 'yyyy-mm-dd') AS fecha_ope,
+      SAFE_CAST(fecha  AS DATE FORMAT 'yyyy-mm-dd') AS fecha,
+      dia,
+      numero,
+      tipo_de_transaccion,
+      descripcion,
+      it,
+      importe,
+      nit,
+      nid,
+      referencia_1,
+      referencia_2,
+      cus,
+      referencia_3,
+      referencia_4,
+      nomina,
+      SAFE_CAST(importe AS FLOAT64) AS valor,
+    FROM `clients-domain-data-master.finance_sheet_global.finance_base_flujo_caja`
+
+    WHERE 1=1
+)
+
+
+            ###################################################################################################
+            #                                               ENTRADAS                                          #
+            ###################################################################################################
+,entradas AS (
+
+SELECT
+  CONCAT(a.nid,"_", a.valor,"_",a.fecha) AS llave,
+   CASE 
+      WHEN en.clasificacion_salidas IS NULL THEN 'Otros ingresos' 
+      WHEN en.clasificacion_salidas IS  NOT NULL THEN en.clasificacion_salidas
+    END  AS clasificacion_salidas
+   
+
+
+FROM (
+      SELECT
+        * 
+      FROM
+      base_flujo_caja
+      WHERE 1=1
+      AND valor>0) AS a
+LEFT JOIN (
+           SELECT
+           DISTINCT
+            CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave, 
+            'Arras Venta' AS clasificacion_salidas,
+            -- b.descripcion,
+            -- concepto,
+            -- b.*,
+            -- ca.*
+            FROM
+             base_flujo_caja  AS b 
+             LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
+            WHERE 1=1
+            AND valor>0
+            AND (ca.concepto = 'ARRAS' OR
+                ((LOWER(referencia_1) LIKE '%arras%'  OR LOWER(referencia_1) LIKE '%desistimiento nid%') AND LOWER(tipo_de_transaccion) NOT LIKE '%devolucion%') OR
+                ((LOWER(referencia_2) LIKE '%arras%'  OR LOWER(referencia_2) LIKE '%desistimiento nid%') AND LOWER(tipo_de_transaccion) NOT LIKE '%devolucion%') OR
+                ((LOWER(referencia_3) LIKE '%arras%'  OR LOWER(referencia_3) LIKE '%desistimiento nid%') AND LOWER(tipo_de_transaccion) NOT LIKE '%devolucion%') OR
+                ((LOWER(referencia_4) LIKE '%arras%'  OR LOWER(referencia_4) LIKE '%desistimiento nid%') AND LOWER(tipo_de_transaccion) NOT LIKE '%devolucion%'))
+            -- AND DATE_TRUNC(fecha_ope,MONTH)='2024-01-01'
+
+          UNION ALL 
+
+           SELECT
+           DISTINCT
+            CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave, 
+            'Saldo Venta' AS clasificacion_salidas,
+            -- b.descripcion,
+            -- concepto,
+
+            FROM
+             base_flujo_caja  AS b 
+             LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
+            WHERE 1=1
+            AND valor>0
+            AND ((ca.concepto = 'ABONO' OR ca.concepto LIKE 'DESEMBOL%') OR 
+                (LOWER(referencia_1) LIKE '%desembolso%'  OR LOWER(referencia_1) LIKE '%abono%') OR
+                (LOWER(referencia_2) LIKE '%desembolso%'  OR LOWER(referencia_2) LIKE '%abono%') OR
+                (LOWER(referencia_3) LIKE '%desembolso%'  OR LOWER(referencia_3) LIKE '%abono%') OR
+                (LOWER(referencia_4) LIKE '%desembolso%'  OR LOWER(referencia_4) LIKE '%abono%') )
+
+          UNION ALL 
+
+           SELECT
+           DISTINCT
+            CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave, 
+            'Traslados entre cuentas - ingreso' AS clasificacion_salidas,
+            -- b.descripcion,
+            -- concepto,
+
+            FROM
+             base_flujo_caja  AS b 
+             LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
+            WHERE 1=1
+            AND valor>0
+            AND (
+                (LOWER(referencia_1) LIKE '%traslado de fondos%'  OR LOWER(referencia_1) LIKE '%corred%davivien%' OR LOWER(referencia_1) LIKE '%fondos de valores%') OR
+                (LOWER(referencia_2) LIKE '%traslado de fondos%'  OR LOWER(referencia_2) LIKE '%corred%davivien%' OR LOWER(referencia_2) LIKE '%fondos de valores%') OR
+                (LOWER(referencia_3) LIKE '%traslado de fondos%'  OR LOWER(referencia_3) LIKE '%corred%davivien%' OR LOWER(referencia_3) LIKE '%fondos de valores%') OR
+                (LOWER(referencia_4) LIKE '%traslado de fondos%'  OR LOWER(referencia_4) LIKE '%corred%davivien%' OR LOWER(referencia_4) LIKE '%fondos de valores%') )
+
+
+          UNION ALL 
+
+           SELECT
+           DISTINCT
+            CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave, 
+            'Comisiones' AS clasificacion_salidas,
+            -- b.descripcion,
+            -- concepto,
+
+            FROM
+             base_flujo_caja  AS b 
+             LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
+            WHERE 1=1
+            AND valor>0
+            -- AND ((ca.concepto = 'COMISION' OR ca.concepto = 'COMISIÓN'))
+            AND ((REPLACE(ca.concepto,'Ó','O') LIKE 'COM%%SION'))
+            
+
+
+
+          UNION ALL 
+
+           SELECT
+           DISTINCT
+            CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave, 
+            'Devolución de obligaciones R4' AS clasificacion_salidas,
+            -- b.descripcion,
+            -- concepto,
+
+            FROM
+             base_flujo_caja  AS b 
+             LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
+            WHERE 1=1
+            AND valor>0
+            AND  (LOWER(tipo_de_transaccion) LIKE '%pago de prov renta 4 &%')
+          ) AS en  ON  en.llave=CONCAT(a.nid,"_", a.valor,"_",a.fecha)
+
+)
+
+-- SELECT
+-- clasificacion_salidas,
+-- COUNT(*)
+-- FROM
+--  entradas
+
+--  GROUP BY 1
+
+
+
+
+
+            ###################################################################################################
+            #                                               SALIDAS                                           #
+            ###################################################################################################
+,salidas AS (
+
+
+SELECT
+  CONCAT(a.nid,"_", a.valor,"_",a.fecha) AS llave,
+   CASE 
+      WHEN en.clasificacion_salidas IS NULL  THEN 'Otros egresos' 
+      WHEN en.clasificacion_salidas IS  NOT NULL THEN en.clasificacion_salidas
+    END  AS clasificacion_salidas
+   
+
+
+FROM (
+      SELECT
+        * 
+      FROM
+      base_flujo_caja
+      WHERE 1=1
+      AND valor<0) AS a
+LEFT JOIN (
+
+  
+  SELECT
+  CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+  -- b.*,
+  'Arras Compra' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+  AND ((LOWER(referencia_1) LIKE '%pago arras%' OR LOWER(referencia_1) LIKE '%arras%')  OR 
+       (LOWER(referencia_2) LIKE '%pago arras%' OR LOWER(referencia_2) LIKE '%arras%')  OR 
+       (LOWER(referencia_3) LIKE '%pago arras%' OR LOWER(referencia_3) LIKE '%arras%')  OR 
+       (LOWER(referencia_4) LIKE '%pago arras%' OR LOWER(referencia_4) LIKE '%arras%')  )
+  
+UNION ALL 
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Gastos Notariales' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+  AND ((LOWER(referencia_1) LIKE '%notaria%' OR LOWER(referencia_1) LIKE '%pago%gasto%nota%' OR LOWER(referencia_1) LIKE '%costos no%' OR LOWER(referencia_1) LIKE '%pago beneficiencia%' OR LOWER(referencia_1) LIKE '%pago rentas departamentales%' OR LOWER(referencia_1) LIKE '%bono por escr%' ) OR
+       (LOWER(referencia_2) LIKE '%notaria%' OR LOWER(referencia_2) LIKE '%pago%gasto%nota%' OR LOWER(referencia_2) LIKE '%costos no%' OR LOWER(referencia_2) LIKE '%pago beneficiencia%' OR LOWER(referencia_2) LIKE '%pago rentas departamentales%' OR LOWER(referencia_2) LIKE '%bono por escr%' ) OR
+       (LOWER(referencia_3) LIKE '%notaria%' OR LOWER(referencia_3) LIKE '%pago%gasto%nota%' OR LOWER(referencia_3) LIKE '%costos no%' OR LOWER(referencia_3) LIKE '%pago beneficiencia%' OR LOWER(referencia_3) LIKE '%pago rentas departamentales%' OR LOWER(referencia_3) LIKE '%bono por escr%' ) OR
+       (LOWER(referencia_4) LIKE '%notaria%' OR LOWER(referencia_4) LIKE '%pago%gasto%nota%' OR LOWER(referencia_4) LIKE '%costos no%' OR LOWER(referencia_4) LIKE '%pago beneficiencia%' OR LOWER(referencia_4) LIKE '%pago rentas departamentales%' OR LOWER(referencia_4) LIKE '%bono por escr%' ))
+
+UNION ALL 
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Hipotecas' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+  AND ((LOWER(referencia_1) NOT LIKE 'pago gastos notariales%' OR LOWER(referencia_2) NOT LIKE 'pago gastos notariales%' OR LOWER(referencia_3) NOT LIKE 'pago gastos notariales%' OR LOWER(referencia_4) NOT LIKE 'pago gastos notariales%')  AND 
+
+    (LOWER(referencia_1) LIKE '%hipoteca%' OR LOWER(referencia_2) LIKE '%hipoteca%' OR LOWER(referencia_3) LIKE '%hipoteca%' OR LOWER(referencia_4) LIKE '%hipoteca%'))
+
+
+UNION ALL 
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Leasing' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+  AND (LOWER(referencia_1) LIKE '%leasing%' OR LOWER(referencia_2) LIKE '%leasing%' OR LOWER(referencia_3) LIKE '%leasing%' OR LOWER(referencia_4) LIKE '%leasing%')
+
+
+  
+UNION ALL 
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Saldo Compra' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+    AND (
+    ((LOWER(referencia_1) LIKE '%pago saldo%ni%' OR LOWER(referencia_1) LIKE '%pago saldo%') AND LOWER(referencia_1) NOT LIKE '%pago saldo%leasing%') OR 
+    ((LOWER(referencia_2) LIKE '%pago saldo%ni%' OR LOWER(referencia_2) LIKE '%pago saldo%') AND LOWER(referencia_2) NOT LIKE '%pago saldo%leasing%') OR 
+    ((LOWER(referencia_3) LIKE '%pago saldo%ni%' OR LOWER(referencia_3) LIKE '%pago saldo%') AND LOWER(referencia_3) NOT LIKE '%pago saldo%leasing%') OR 
+    ((LOWER(referencia_4) LIKE '%pago saldo%ni%' OR LOWER(referencia_4) LIKE '%pago saldo%') AND LOWER(referencia_4) NOT LIKE '%pago saldo%leasing%') )
+
+       
+        
+UNION ALL 
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Depósitos' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+  AND (LOWER(referencia_1) LIKE '%deposito%' OR LOWER(referencia_2) LIKE '%deposito%' OR LOWER(referencia_3) LIKE '%deposito%' OR LOWER(referencia_4) LIKE '%deposito%')
+
+      
+UNION ALL 
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Remodelaciones' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+  AND ((LOWER(referencia_1) LIKE '%remodela%' OR  LOWER(referencia_1) LIKE '%pago%remo%') OR 
+       (LOWER(referencia_2) LIKE '%remodela%' OR  LOWER(referencia_2) LIKE '%pago%remo%') OR 
+       (LOWER(referencia_3) LIKE '%remodela%' OR  LOWER(referencia_3) LIKE '%pago%remo%') OR 
+       (LOWER(referencia_4) LIKE '%remodela%' OR  LOWER(referencia_4) LIKE '%pago%remo%'))
+    
+UNION ALL 
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Avalúos' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+  AND ((LOWER(referencia_1) LIKE '%estudio avaluos%' OR LOWER(referencia_1) LIKE '%avalu%') OR 
+       (LOWER(referencia_2) LIKE '%estudio avaluos%' OR LOWER(referencia_2) LIKE '%avalu%') OR
+       (LOWER(referencia_3) LIKE '%estudio avaluos%' OR LOWER(referencia_3) LIKE '%avalu%') OR 
+       (LOWER(referencia_4) LIKE '%estudio avaluos%' OR LOWER(referencia_4) LIKE '%avalu%'))
+   
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Estudios de Titulos' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0
+  AND (LOWER(referencia_1) LIKE '%estudio de titulos%' OR LOWER(referencia_2) LIKE '%estudio de titulos%' OR LOWER(referencia_3) LIKE '%estudio de titulos%' OR LOWER(referencia_4) LIKE '%estudio de titulos%')
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Beneficencia y registro' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND (LOWER(referencia_1) LIKE '%rentas departamentales%' OR LOWER(referencia_2) LIKE '%rentas departamentales%' OR LOWER(referencia_3) LIKE '%rentas departamentales%' OR LOWER(referencia_4) LIKE '%rentas departamentales%')
+      
+      
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Beneficencia y registro' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND (LOWER(referencia_1) LIKE '%rentas departamentales%' OR LOWER(referencia_2) LIKE '%rentas departamentales%' OR LOWER(referencia_3) LIKE '%rentas departamentales%' OR LOWER(referencia_4) LIKE '%rentas departamentales%')
+        
+        
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Comisiones externas' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND( (LOWER(referencia_1) LIKE '%comisi%' OR LOWER(referencia_1) LIKE '%pago%anticip%' OR LOWER(referencia_1) LIKE '%comisión venta%' OR LOWER(referencia_1) LIKE '%pago ant 50 broker%' OR LOWER(referencia_1) LIKE '%pago%comision%') OR
+       (LOWER(referencia_2) LIKE '%comisi%' OR LOWER(referencia_2) LIKE '%pago%anticip%' OR LOWER(referencia_2) LIKE '%comisión venta%' OR LOWER(referencia_2) LIKE '%pago ant 50 broker%' OR LOWER(referencia_2) LIKE '%pago%comision%') OR
+       (LOWER(referencia_3) LIKE '%comisi%' OR LOWER(referencia_3) LIKE '%pago%anticip%' OR LOWER(referencia_3) LIKE '%comisión venta%' OR LOWER(referencia_3) LIKE '%pago ant 50 broker%' OR LOWER(referencia_3) LIKE '%pago%comision%') OR
+       (LOWER(referencia_4) LIKE '%comisi%' OR LOWER(referencia_4) LIKE '%pago%anticip%' OR LOWER(referencia_4) LIKE '%comisión venta%' OR LOWER(referencia_4) LIKE '%pago ant 50 broker%' OR LOWER(referencia_4) LIKE '%pago%comision%'))
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Servicios públicos' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%servicio público%'OR LOWER(cus) LIKE '%servicio público%' OR LOWER(referencia_1) LIKE '%reintegro ser%' OR LOWER(referencia_1) LIKE '%servicio p bl%') OR
+      (LOWER(referencia_2) LIKE '%servicio público%'OR LOWER(cus) LIKE '%servicio público%' OR LOWER(referencia_2) LIKE '%reintegro ser%' OR LOWER(referencia_2) LIKE '%servicio p bl%') OR
+      (LOWER(referencia_3) LIKE '%servicio público%'OR LOWER(cus) LIKE '%servicio público%' OR LOWER(referencia_3) LIKE '%reintegro ser%' OR LOWER(referencia_3) LIKE '%servicio p bl%') OR
+      (LOWER(referencia_4) LIKE '%servicio público%'OR LOWER(cus) LIKE '%servicio público%' OR LOWER(referencia_4) LIKE '%reintegro ser%' OR LOWER(referencia_4) LIKE '%servicio p bl%') )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Administración' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%pago admon%'OR LOWER(referencia_1) LIKE '%servicio público%' OR LOWER(referencia_1) LIKE 'int%' OR LOWER(referencia_1) LIKE 'manzana%' OR LOWER(referencia_1) LIKE 'torre%' OR LOWER(referencia_1) LIKE 'apto%' OR LOWER(referencia_1) LIKE 'casa%') OR
+      (LOWER(referencia_2) LIKE '%pago admon%'OR LOWER(referencia_2) LIKE '%servicio público%' OR LOWER(referencia_2) LIKE 'int%' OR LOWER(referencia_2) LIKE 'manzana%' OR LOWER(referencia_2) LIKE 'torre%' OR LOWER(referencia_2) LIKE 'apto%' OR LOWER(referencia_2) LIKE 'casa%') OR
+      (LOWER(referencia_3) LIKE '%pago admon%'OR LOWER(referencia_3) LIKE '%servicio público%' OR LOWER(referencia_3) LIKE 'int%' OR LOWER(referencia_3) LIKE 'manzana%' OR LOWER(referencia_3) LIKE 'torre%' OR LOWER(referencia_3) LIKE 'apto%' OR LOWER(referencia_3) LIKE 'casa%') OR
+      (LOWER(referencia_4) LIKE '%pago admon%'OR LOWER(referencia_4) LIKE '%servicio público%' OR LOWER(referencia_4) LIKE 'int%' OR LOWER(referencia_4) LIKE 'manzana%' OR LOWER(referencia_4) LIKE 'torre%' OR LOWER(referencia_4) LIKE 'apto%' OR LOWER(referencia_4) LIKE 'casa%') )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Mantenimietos y Aseo' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%aseo m%') OR
+      (LOWER(referencia_2) LIKE '%aseo m%') OR
+      (LOWER(referencia_3) LIKE '%aseo m%') OR
+      (LOWER(referencia_4) LIKE '%aseo m%') )
+    
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Prediales' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%devolucion retencion en%' OR LOWER(referencia_1) LIKE '%rte fte%' OR  LOWER(referencia_1) LIKE '%reintegro%pre%' OR  LOWER(referencia_1) LIKE '%reintegro%adm%' OR LOWER(referencia_1) LIKE '%reintegro%imp%' OR LOWER(referencia_1) LIKE '%predial descontar%' OR LOWER(referencia_1) LIKE '%predial%') OR
+      (LOWER(referencia_2) LIKE '%devolucion retencion en%' OR LOWER(referencia_2) LIKE '%rte fte%' OR  LOWER(referencia_2) LIKE '%reintegro%pre%' OR  LOWER(referencia_2) LIKE '%reintegro%adm%' OR LOWER(referencia_2) LIKE '%reintegro%imp%' OR LOWER(referencia_2) LIKE '%predial descontar%' OR LOWER(referencia_2) LIKE '%predial%') OR
+      (LOWER(referencia_3) LIKE '%devolucion retencion en%' OR LOWER(referencia_3) LIKE '%rte fte%' OR  LOWER(referencia_3) LIKE '%reintegro%pre%' OR  LOWER(referencia_3) LIKE '%reintegro%adm%' OR LOWER(referencia_3) LIKE '%reintegro%imp%' OR LOWER(referencia_3) LIKE '%predial descontar%' OR LOWER(referencia_3) LIKE '%predial%') OR
+      (LOWER(referencia_4) LIKE '%devolucion retencion en%' OR LOWER(referencia_4) LIKE '%rte fte%' OR  LOWER(referencia_4) LIKE '%reintegro%pre%' OR  LOWER(referencia_4) LIKE '%reintegro%adm%' OR LOWER(referencia_4) LIKE '%reintegro%imp%' OR LOWER(referencia_4) LIKE '%predial descontar%' OR LOWER(referencia_4) LIKE '%predial%') )
+  
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Nomina empleado' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE 'pago nomina%' OR LOWER(referencia_1) LIKE 'liquidacion prestaciones%' OR LOWER(referencia_1) LIKE '%pago liquidacion prestaciones%' OR LOWER(cus) LIKE 'nomina masiva%' OR LOWER(referencia_1) LIKE 'pago embargo%') OR
+      (LOWER(referencia_2) LIKE 'pago nomina%' OR LOWER(referencia_2) LIKE 'liquidacion prestaciones%' OR LOWER(referencia_2) LIKE '%pago liquidacion prestaciones%' OR LOWER(cus) LIKE 'nomina masiva%' OR LOWER(referencia_2) LIKE 'pago embargo%') OR
+      (LOWER(referencia_3) LIKE 'pago nomina%' OR LOWER(referencia_3) LIKE 'liquidacion prestaciones%' OR LOWER(referencia_3) LIKE '%pago liquidacion prestaciones%' OR LOWER(cus) LIKE 'nomina masiva%' OR LOWER(referencia_3) LIKE 'pago embargo%') OR
+      (LOWER(referencia_4) LIKE 'pago nomina%' OR LOWER(referencia_4) LIKE 'liquidacion prestaciones%' OR LOWER(referencia_4) LIKE '%pago liquidacion prestaciones%' OR LOWER(cus) LIKE 'nomina masiva%' OR LOWER(referencia_4) LIKE 'pago embargo%') )
+  
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Seguridad Social y Parafiscales' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(tipo_de_transaccion) LIKE 'cargo pago electronico planilla unica%') OR
+      (LOWER(tipo_de_transaccion) LIKE 'cargo pago electronico planilla unica%') OR
+      (LOWER(tipo_de_transaccion) LIKE 'cargo pago electronico planilla unica%') OR
+      (LOWER(tipo_de_transaccion) LIKE 'cargo pago electronico planilla unica%') )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Mensajería' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%mensajería%') OR
+      (LOWER(referencia_2) LIKE '%mensajería%') OR
+      (LOWER(referencia_3) LIKE '%mensajería%') OR
+      (LOWER(referencia_4) LIKE '%mensajería%') )
+  
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Arriendo oficinas' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%arriendo%' OR LOWER(referencia_1) LIKE '%arrendamiento%') OR
+      (LOWER(referencia_2) LIKE '%arriendo%' OR LOWER(referencia_2) LIKE '%arrendamiento%') OR
+      (LOWER(referencia_3) LIKE '%arriendo%' OR LOWER(referencia_3) LIKE '%arrendamiento%') OR
+      (LOWER(referencia_4) LIKE '%arriendo%' OR LOWER(referencia_4) LIKE '%arrendamiento%') )
+  
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Servicios publicos (oficina y locales)' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%servicio líneas corportarivas%' OR LOWER(referencia_1) LIKE '%consumo de servicios pu%'OR LOWER(referencia_1) LIKE '%serv movil cex tintal%') OR
+      (LOWER(referencia_2) LIKE '%servicio líneas corportarivas%' OR LOWER(referencia_2) LIKE '%consumo de servicios pu%'OR LOWER(referencia_2) LIKE '%serv movil cex tintal%') OR
+      (LOWER(referencia_3) LIKE '%servicio líneas corportarivas%' OR LOWER(referencia_3) LIKE '%consumo de servicios pu%'OR LOWER(referencia_3) LIKE '%serv movil cex tintal%') OR
+      (LOWER(referencia_4) LIKE '%servicio líneas corportarivas%' OR LOWER(referencia_4) LIKE '%consumo de servicios pu%'OR LOWER(referencia_4) LIKE '%serv movil cex tintal%') )
+  
+-- UNION ALL
+
+--   SELECT
+--     CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+--     -- b.*,
+--     'Servicios publicos (oficina y locales)' AS clasificacion_salidas,
+--   FROM
+--    base_flujo_caja  AS b 
+--   WHERE 1=1
+--   AND valor<0 
+--   AND((LOWER(referencia_1) LIKE '%servicio líneas corportarivas%' OR LOWER(referencia_1) LIKE '%consumo de servicios pu%'OR LOWER(referencia_1) LIKE '%serv movil cex tintal%') OR
+--       (LOWER(referencia_2) LIKE '%servicio líneas corportarivas%' OR LOWER(referencia_2) LIKE '%consumo de servicios pu%'OR LOWER(referencia_2) LIKE '%serv movil cex tintal%') OR
+--       (LOWER(referencia_3) LIKE '%servicio líneas corportarivas%' OR LOWER(referencia_3) LIKE '%consumo de servicios pu%'OR LOWER(referencia_3) LIKE '%serv movil cex tintal%') OR
+--       (LOWER(referencia_4) LIKE '%servicio líneas corportarivas%' OR LOWER(referencia_4) LIKE '%consumo de servicios pu%'OR LOWER(referencia_4) LIKE '%serv movil cex tintal%') )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- b.*,
+    'Honorarios' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%honorarios desconta%' OR LOWER(referencia_1) LIKE '%pago honorarios%'OR LOWER(referencia_1) LIKE '%honorarios%') OR
+      (LOWER(referencia_2) LIKE '%honorarios desconta%' OR LOWER(referencia_2) LIKE '%pago honorarios%'OR LOWER(referencia_2) LIKE '%honorarios%') OR
+      (LOWER(referencia_3) LIKE '%honorarios desconta%' OR LOWER(referencia_3) LIKE '%pago honorarios%'OR LOWER(referencia_3) LIKE '%honorarios%') OR
+      (LOWER(referencia_4) LIKE '%honorarios desconta%' OR LOWER(referencia_4) LIKE '%pago honorarios%'OR LOWER(referencia_4) LIKE '%honorarios%') )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'Bienestar empleado' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE 'pagos afc%' OR LOWER(referencia_1) LIKE '%pago libranzas%' OR LOWER(referencia_1) LIKE '%fiesta fin de año habi%' OR LOWER(referencia_1) LIKE '%pago afc%') OR
+      (LOWER(referencia_2) LIKE 'pagos afc%' OR LOWER(referencia_2) LIKE '%pago libranzas%' OR LOWER(referencia_2) LIKE '%fiesta fin de año habi%' OR LOWER(referencia_2) LIKE '%pago afc%') OR
+      (LOWER(referencia_3) LIKE 'pagos afc%' OR LOWER(referencia_3) LIKE '%pago libranzas%' OR LOWER(referencia_3) LIKE '%fiesta fin de año habi%' OR LOWER(referencia_3) LIKE '%pago afc%') OR
+      (LOWER(referencia_4) LIKE 'pagos afc%' OR LOWER(referencia_4) LIKE '%pago libranzas%' OR LOWER(referencia_4) LIKE '%fiesta fin de año habi%' OR LOWER(referencia_4) LIKE '%pago afc%') )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'TC Clara' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE 'pago tarjeta cf tech%' OR LOWER(referencia_1) LIKE '%cf%tech%' ) OR
+      (LOWER(referencia_2) LIKE 'pago tarjeta cf tech%' OR LOWER(referencia_2) LIKE '%cf%tech%' ) OR
+      (LOWER(referencia_3) LIKE 'pago tarjeta cf tech%' OR LOWER(referencia_3) LIKE '%cf%tech%' ) OR
+      (LOWER(referencia_4) LIKE 'pago tarjeta cf tech%' OR LOWER(referencia_4) LIKE '%cf%tech%' ) )
+  
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'TC Jeeves' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE 'pago tc jeeves%' OR LOWER(referencia_1) LIKE '%jeeves%') OR
+      (LOWER(referencia_2) LIKE 'pago tc jeeves%' OR LOWER(referencia_2) LIKE '%jeeves%') OR
+      (LOWER(referencia_3) LIKE 'pago tc jeeves%' OR LOWER(referencia_3) LIKE '%jeeves%') OR
+      (LOWER(referencia_4) LIKE 'pago tc jeeves%' OR LOWER(referencia_4) LIKE '%jeeves%') )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'Impuestos' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE 'pago impuesto%' OR LOWER(tipo_de_transaccion) LIKE '%pago%impuesto%' OR LOWER(tipo_de_transaccion) LIKE '%pago reteica%') OR
+      (LOWER(referencia_2) LIKE 'pago impuesto%' OR LOWER(tipo_de_transaccion) LIKE '%pago%impuesto%' OR LOWER(tipo_de_transaccion) LIKE '%pago reteica%') OR
+      (LOWER(referencia_3) LIKE 'pago impuesto%' OR LOWER(tipo_de_transaccion) LIKE '%pago%impuesto%' OR LOWER(tipo_de_transaccion) LIKE '%pago reteica%') OR
+      (LOWER(referencia_4) LIKE 'pago impuesto%' OR LOWER(tipo_de_transaccion) LIKE '%pago%impuesto%' OR LOWER(tipo_de_transaccion) LIKE '%pago reteica%') )
+
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'Legalizaciones' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE 'pago%%leg%' OR LOWER(tipo_de_transaccion) LIKE '%anticipo%%viatic%' OR LOWER(tipo_de_transaccion) LIKE '%lega. rembolso%' OR referencia_1 LIKE '%H23-%' OR referencia_1 LIKE '%H24-%'
+  OR LOWER(referencia_1) LIKE '%%legal%' ) OR
+      (LOWER(referencia_2) LIKE 'pago%%leg%' OR LOWER(tipo_de_transaccion) LIKE '%anticipo%%viatic%' OR LOWER(tipo_de_transaccion) LIKE '%lega. rembolso%' OR referencia_2 LIKE '%H23-%' OR referencia_2 LIKE '%H24-%'
+      OR LOWER(referencia_2) LIKE '%%legal%' ) OR
+      (LOWER(referencia_3) LIKE 'pago%%leg%' OR LOWER(tipo_de_transaccion) LIKE '%anticipo%%viatic%' OR LOWER(tipo_de_transaccion) LIKE '%lega. rembolso%' OR referencia_3 LIKE '%H23-%' OR referencia_3 LIKE '%H24-%'
+      OR LOWER(referencia_3) LIKE '%%legal%' ) OR
+      (LOWER(referencia_4) LIKE 'pago%%leg%' OR LOWER(tipo_de_transaccion) LIKE '%anticipo%%viatic%' OR LOWER(tipo_de_transaccion) LIKE '%lega. rembolso%' OR referencia_4 LIKE '%H23-%' OR referencia_4 LIKE '%H24-%'
+      OR LOWER(referencia_4) LIKE '%%legal%' ) )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'Licencias' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(referencia_1) LIKE '%costo factura aws%' OR LOWER(tipo_de_transaccion) LIKE '%plataforma de facturación en la nube%' OR LOWER(tipo_de_transaccion) LIKE '%licencias office%') OR
+      (LOWER(referencia_2) LIKE '%costo factura aws%' OR LOWER(tipo_de_transaccion) LIKE '%plataforma de facturación en la nube%' OR LOWER(tipo_de_transaccion) LIKE '%licencias office%') OR
+      (LOWER(referencia_3) LIKE '%costo factura aws%' OR LOWER(tipo_de_transaccion) LIKE '%plataforma de facturación en la nube%' OR LOWER(tipo_de_transaccion) LIKE '%licencias office%') OR
+      (LOWER(referencia_4) LIKE '%costo factura aws%' OR LOWER(tipo_de_transaccion) LIKE '%plataforma de facturación en la nube%' OR LOWER(tipo_de_transaccion) LIKE '%licencias office%') )
+
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'GMF' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(tipo_de_transaccion) LIKE 'impto gobierno 4x1000%' OR LOWER(tipo_de_transaccion) LIKE 'abono ajuste gravamen mov. financieros%' OR LOWER(tipo_de_transaccion) LIKE '%rev impto gobierno 4x1000%') OR
+      (LOWER(tipo_de_transaccion) LIKE 'impto gobierno 4x1000%' OR LOWER(tipo_de_transaccion) LIKE 'abono ajuste gravamen mov. financieros%' OR LOWER(tipo_de_transaccion) LIKE '%rev impto gobierno 4x1000%') OR
+      (LOWER(tipo_de_transaccion) LIKE 'impto gobierno 4x1000%' OR LOWER(tipo_de_transaccion) LIKE 'abono ajuste gravamen mov. financieros%' OR LOWER(tipo_de_transaccion) LIKE '%rev impto gobierno 4x1000%') OR
+      (LOWER(tipo_de_transaccion) LIKE 'impto gobierno 4x1000%' OR LOWER(tipo_de_transaccion) LIKE 'abono ajuste gravamen mov. financieros%' OR LOWER(tipo_de_transaccion) LIKE '%rev impto gobierno 4x1000%') )
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'Comisiones bancarias' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(tipo_de_transaccion) LIKE 'comision dispersion de pago de proveedores-otros%' OR LOWER(tipo_de_transaccion) LIKE 'cargo comision recaudos con comprobante%' OR LOWER(tipo_de_transaccion) LIKE '%comis%%sucursal%' 
+  
+      OR LOWER(tipo_de_transaccion) LIKE '%comision%%bancos%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%cajero automatic%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%corresponsal%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%caja%') OR
+
+      (LOWER(tipo_de_transaccion) LIKE 'comision dispersion de pago de proveedores-otros%' OR LOWER(tipo_de_transaccion) LIKE 'cargo comision recaudos con comprobante%' OR LOWER(tipo_de_transaccion) LIKE '%comis%%sucursal%'
+      
+      OR LOWER(tipo_de_transaccion) LIKE '%comision%%bancos%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%cajero automatic%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%corresponsal%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%caja%') OR
+
+      (LOWER(tipo_de_transaccion) LIKE 'comision dispersion de pago de proveedores-otros%' OR LOWER(tipo_de_transaccion) LIKE 'cargo comision recaudos con comprobante%' OR LOWER(tipo_de_transaccion) LIKE '%comis%%sucursal%' 
+      
+      OR LOWER(tipo_de_transaccion) LIKE '%comision%%bancos%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%cajero automatic%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%corresponsal%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%caja%') OR
+
+      (LOWER(tipo_de_transaccion) LIKE 'comision dispersion de pago de proveedores-otros%' OR LOWER(tipo_de_transaccion) LIKE 'cargo comision recaudos con comprobante%' OR LOWER(tipo_de_transaccion) LIKE '%comis%%sucursal%'
+      
+      OR LOWER(tipo_de_transaccion) LIKE '%comision%%bancos%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%cajero automatic%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%corresponsal%'OR LOWER(tipo_de_transaccion) LIKE '%comision%%caja%') )
+
+
+
+
+-- UNION ALL
+
+--   SELECT
+--     CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+--     -- -- b.*,
+--     'Traslados entre cuentas - egresos' AS clasificacion_salidas,
+--   FROM
+--    base_flujo_caja  AS b 
+--   WHERE 1=1
+--   AND valor<0 
+--   AND((LOWER(tipo_de_transaccion) LIKE ' trasl entre fondos de valores%' OR LOWER(tipo_de_transaccion) LIKE 'cargo dispersion pago de proveedores/otros%' OR LOWER(tipo_de_transaccion) LIKE 'pago a prov inversiones mcn sa%'OR LOWER(tipo_de_transaccion) LIKE 'cargo transferencia por internet o banca movil o swift%') OR
+--       (LOWER(tipo_de_transaccion) LIKE ' trasl entre fondos de valores%' OR LOWER(tipo_de_transaccion) LIKE 'cargo dispersion pago de proveedores/otros%' OR LOWER(tipo_de_transaccion) LIKE 'pago a prov inversiones mcn sa%'OR LOWER(tipo_de_transaccion) LIKE 'cargo transferencia por internet o banca movil o swift%') OR
+--       (LOWER(tipo_de_transaccion) LIKE ' trasl entre fondos de valores%' OR LOWER(tipo_de_transaccion) LIKE 'cargo dispersion pago de proveedores/otros%' OR LOWER(tipo_de_transaccion) LIKE 'pago a prov inversiones mcn sa%'OR LOWER(tipo_de_transaccion) LIKE 'cargo transferencia por internet o banca movil o swift%') OR
+--       (LOWER(tipo_de_transaccion) LIKE ' trasl entre fondos de valores%' OR LOWER(tipo_de_transaccion) LIKE 'cargo dispersion pago de proveedores/otros%' OR LOWER(tipo_de_transaccion) LIKE 'pago a prov inversiones mcn sa%'OR LOWER(tipo_de_transaccion) LIKE 'cargo transferencia por internet o banca movil o swift%') )
+      
+
+UNION ALL
+
+  SELECT
+    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
+    -- -- b.*,
+    'Otros gastos bancarios' AS clasificacion_salidas,
+  FROM
+   base_flujo_caja  AS b 
+  WHERE 1=1
+  AND valor<0 
+  AND((LOWER(tipo_de_transaccion) LIKE '%iva%' OR LOWER(tipo_de_transaccion) LIKE '%retencion en la fuente%' OR LOWER(tipo_de_transaccion) LIKE '%retefuente%'OR LOWER(tipo_de_transaccion) LIKE '%debito pago wompi%' OR LOWER(tipo_de_transaccion) LIKE '%cuota manejo suc%') OR
+      (LOWER(tipo_de_transaccion) LIKE '%iva%' OR LOWER(tipo_de_transaccion) LIKE '%retencion en la fuente%' OR LOWER(tipo_de_transaccion) LIKE '%retefuente%'OR LOWER(tipo_de_transaccion) LIKE '%debito pago wompi%' OR LOWER(tipo_de_transaccion) LIKE '%debito pago wompi%'
+  ) OR
+      (LOWER(tipo_de_transaccion) LIKE '%iva%' OR LOWER(tipo_de_transaccion) LIKE '%retencion en la fuente%' OR LOWER(tipo_de_transaccion) LIKE '%retefuente%'OR LOWER(tipo_de_transaccion) LIKE '%debito pago wompi%' OR LOWER(tipo_de_transaccion) LIKE '%cuota manejo suc%'
+  ) OR
+      (LOWER(tipo_de_transaccion) LIKE '%iva%' OR LOWER(tipo_de_transaccion) LIKE '%retencion en la fuente%' OR LOWER(tipo_de_transaccion) LIKE '%retefuente%'OR LOWER(tipo_de_transaccion) LIKE '%debito pago wompi%' OR LOWER(tipo_de_transaccion) LIKE '%cuota manejo suc%'
+
+  ) )
+
+
+  ) AS en  ON  en.llave=CONCAT(a.nid,"_", a.valor,"_",a.fecha)
+
+  )
+
+
+-- SELECT
+-- clasificacion_salidas,
+-- COUNT(*)
+-- FROM
+--  salidas
+--  GROUP BY 1
+
+
+
+  SELECT
+  CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave_base_flujo,
+  s.llave AS llave_cartera,
+  b.*,
+  IFNULL(s.clasificacion_salidas,'otros') AS clasificacion_salidas,
+  IF(TRIM(LOWER(b.descripcion))!=TRIM(LOWER(clasificacion_salidas)),1,0) AS inconsistencias_validacion,
+  cfja.seccion,
+  cfjb.seccion AS seccion_sheets, ## lo que viene desde la fuente clasificado,para verificacion  
+  cfja.resumen,
+  cfjb.resumen AS resumen_sheets,## lo que viene desde la fuente clasificado,para verificacion
+
+
+
+  FROM
+  base_flujo_caja  AS b 
+ LEFT JOIN (SELECT * FROM salidas
+            UNION ALL
+            SELECT * FROM entradas) AS s ON CONCAT(b.nid,"_", b.valor,"_",b.fecha)=s.llave
+ LEFT JOIN `papyrus-delivery-data.corp_gov_global.input_clasificacion_flujo_caja_co` AS cfja ON s.clasificacion_salidas=cfja.detalle_rubro
+ LEFT JOIN `papyrus-delivery-data.corp_gov_global.input_clasificacion_flujo_caja_co` AS cfjb ON b.descripcion=cfjb.detalle_rubro
+WHERE 1=1
+  -- -- AND LOWER(descripcion) ='arras compra'
+  -- AND (TRIM(LOWER(descripcion))!=TRIM(LOWER(clasificacion_salidas)) OR TRIM(LOWER(clasificacion_salidas)) IS NULL) 
+  -- AND DATE_TRUNC(b.fecha,MONTH)='2024-01-01'
+
+
+  -- GROUP BY 1,2
