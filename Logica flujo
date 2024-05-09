@@ -50,29 +50,89 @@ FROM
 
 
 ,base_flujo_caja AS (
-  SELECT 
-      num,
-      cuenta,
-      SAFE_CAST(fecha_ope  AS DATE FORMAT 'yyyy-mm-dd') AS fecha_ope,
-      SAFE_CAST(fecha  AS DATE FORMAT 'yyyy-mm-dd') AS fecha,
-      dia,
-      numero,
-      tipo_de_transaccion,
-      descripcion,
-      it,
-      importe,
-      nit,
-      nid,
-      referencia_1,
-      referencia_2,
-      cus,
-      referencia_3,
-      referencia_4,
-      nomina,
-      SAFE_CAST(importe AS FLOAT64) AS valor,
-    FROM `clients-domain-data-master.finance_sheet_global.finance_base_flujo_caja`
+WITH a AS (
+  SELECT
+      'Colombia' as pais,
+      CONCAT(it,' ',importe,' ',nit,' ',nid,' ',referencia_1,' ',referencia_2,' ',cus,' ',referencia_3,' ',referencia_4) AS texto,
+      ARRAY_TO_STRING(REGEXP_EXTRACT_ALL((CONCAT(it,' ',importe,' ',nit,' ',nid,' ',referencia_1,' ',referencia_2,' ',cus,' ',referencia_3,' ',referencia_4)),r'\d{10,11}'),' ') AS extracto,
+      *
+  FROM
+  `clients-domain-data-master.finance_sheet_global.finance_base_flujo_caja`
+  
+  WHERE 1=1
 
-    WHERE 1=1
+)
+
+,limite AS (
+  SELECT 
+    'Colombia' AS pais,
+    MAX(nid) AS limite_superior,
+    MIN(nid) AS limite_inferior
+  FROM `papyrus-master.dm_habi_co_dwh_bi.operacion_general_co_bi`
+)
+
+,pre_base AS (
+select
+ IF(  SAFE_CAST(IF(LENGTH(extracto)>0,SPLIT(extracto,' ')[OFFSET(0)],NULL) AS  INT64)>=l.limite_inferior 
+        AND
+      SAFE_CAST(IF(LENGTH(extracto)>0,SPLIT(extracto,' ')[OFFSET(0)],NULL) AS  INT64)<=l.limite_superior,
+    SAFE_CAST(IF(LENGTH(extracto)>0,SPLIT(extracto,' ')[OFFSET(0)],NULL) AS INT64),NULL)AS extracto_0,
+
+
+IF(
+    SAFE_CAST(
+              (CASE 
+                WHEN ARRAY_LENGTH(SPLIT(extracto, ' ')) >= 2 THEN SPLIT(extracto, ' ')[OFFSET(1)]
+              END) AS INT64) >=l.limite_inferior 
+    AND
+    SAFE_CAST(
+              (CASE 
+                WHEN ARRAY_LENGTH(SPLIT(extracto, ' ')) >= 2 THEN SPLIT(extracto, ' ')[OFFSET(1)]
+              END) AS INT64) <=l.limite_superior, 
+
+    SAFE_CAST(
+              (CASE 
+                WHEN ARRAY_LENGTH(SPLIT(extracto, ' ')) >= 2 THEN SPLIT(extracto, ' ')[OFFSET(1)]
+              END) AS INT64),
+NULL) AS extracto_1,
+
+
+
+IF(
+    SAFE_CAST(
+              (CASE 
+                WHEN ARRAY_LENGTH(SPLIT(extracto, ' ')) >= 3 THEN SPLIT(extracto, ' ')[OFFSET(2)] 
+              END) AS INT64) >=l.limite_inferior 
+    AND
+    SAFE_CAST(
+              (CASE 
+                WHEN ARRAY_LENGTH(SPLIT(extracto, ' ')) >= 3 THEN SPLIT(extracto, ' ')[OFFSET(2)] 
+              END) AS INT64) <=l.limite_superior, 
+    
+    SAFE_CAST(
+              (CASE 
+                WHEN ARRAY_LENGTH(SPLIT(extracto, ' ')) >= 3 THEN SPLIT(extracto, ' ')[OFFSET(2)] 
+              END) AS INT64),
+NULL) AS extracto_2,     
+  a.* EXCEPT(texto,extracto)
+
+FROM
+a
+LEFT JOIN limite AS l ON a.pais=l.pais
+)
+
+SELECT
+    'f_'||ROW_NUMBER() OVER() AS id_transaccion,
+    COALESCE(SAFE_CAST(nid AS INT64),extracto_0,extracto_1,extracto_2) AS nid,
+    nid AS nid_base,
+    * EXCEPT(nid,fecha_ope,fecha),
+    SAFE_CAST(fecha_ope  AS DATE FORMAT 'yyyy-mm-dd') AS fecha_ope,
+    SAFE_CAST(fecha  AS DATE FORMAT 'yyyy-mm-dd') AS fecha,
+    SAFE_CAST(importe AS FLOAT64) AS valor
+FROM
+pre_base
+
+
 )
 
 
@@ -102,21 +162,21 @@ LEFT JOIN (
            DISTINCT
             CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave, 
             'Arras Venta' AS clasificacion_salidas,
-            -- b.descripcion,
-            -- concepto,
-            -- b.*,
-            -- ca.*
             FROM
              base_flujo_caja  AS b 
              LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
             WHERE 1=1
             AND valor>0
-            AND (ca.concepto = 'ARRAS' OR
+            AND (ca.concepto LIKE 'ARRAS%' OR
                 ((LOWER(referencia_1) LIKE '%arras%'  OR LOWER(referencia_1) LIKE '%desistimiento nid%') AND LOWER(tipo_de_transaccion) NOT LIKE '%devolucion%') OR
                 ((LOWER(referencia_2) LIKE '%arras%'  OR LOWER(referencia_2) LIKE '%desistimiento nid%') AND LOWER(tipo_de_transaccion) NOT LIKE '%devolucion%') OR
                 ((LOWER(referencia_3) LIKE '%arras%'  OR LOWER(referencia_3) LIKE '%desistimiento nid%') AND LOWER(tipo_de_transaccion) NOT LIKE '%devolucion%') OR
                 ((LOWER(referencia_4) LIKE '%arras%'  OR LOWER(referencia_4) LIKE '%desistimiento nid%') AND LOWER(tipo_de_transaccion) NOT LIKE '%devolucion%'))
-            -- AND DATE_TRUNC(fecha_ope,MONTH)='2024-01-01'
+            AND  (LOWER(tipo_de_transaccion) NOT LIKE '%pago de prov renta 4 &%' OR  LOWER(tipo_de_transaccion)  NOT LIKE '%pago%rent%4%')
+
+
+
+
 
           UNION ALL 
 
@@ -129,14 +189,33 @@ LEFT JOIN (
 
             FROM
              base_flujo_caja  AS b 
-             LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
+             LEFT JOIN ( SELECT 
+                          * 
+                        FROM cartera
+                        WHERE 1=1 
+                            AND concepto IS NOT NULL 
+                            AND (LOWER(concepto)  LIKE 'abono%' OR LOWER(concepto)  LIKE 'desembol%'))
+                         AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
+             LEFT JOIN ( SELECT 
+                          * 
+                        FROM cartera
+                        WHERE 1=1 
+                            AND concepto IS NOT NULL 
+                            AND (LOWER(concepto)  LIKE 'abono%' OR LOWER(concepto)  LIKE 'desembol%')) 
+                        AS cab ON  CONCAT(b.fecha,"_", b.valor)= CONCAT(cab.fecha,"_", cab.monto) AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(cab.fecha AS DATE),MONTH)
             WHERE 1=1
             AND valor>0
-            AND ((ca.concepto = 'ABONO' OR ca.concepto LIKE 'DESEMBOL%') OR 
-                (LOWER(referencia_1) LIKE '%desembolso%'  OR LOWER(referencia_1) LIKE '%abono%') OR
-                (LOWER(referencia_2) LIKE '%desembolso%'  OR LOWER(referencia_2) LIKE '%abono%') OR
-                (LOWER(referencia_3) LIKE '%desembolso%'  OR LOWER(referencia_3) LIKE '%abono%') OR
-                (LOWER(referencia_4) LIKE '%desembolso%'  OR LOWER(referencia_4) LIKE '%abono%') )
+            AND (
+                  (ca.concepto = 'ABONO' OR ca.concepto LIKE 'DESEMBOL%')  OR
+                  (cab.concepto = 'ABONO' OR cab.concepto LIKE 'DESEMBOL%') OR  
+                  (LOWER(b.referencia_1) LIKE 'dev%saldo%favor%')  OR
+                  (LOWER(b.referencia_2) LIKE 'dev%saldo%favor%')  OR
+                  (LOWER(b.referencia_3) LIKE 'dev%saldo%favor%')  OR
+                  (LOWER(b.referencia_4) LIKE 'dev%saldo%favor%') 
+                   )
+            AND(LOWER(referencia_1) NOT LIKE '%arras%'
+            AND  (LOWER(tipo_de_transaccion) NOT LIKE '%pago de prov renta 4 &%' OR  LOWER(tipo_de_transaccion)  NOT LIKE '%pago%rent%4%')
+            )
 
           UNION ALL 
 
@@ -152,14 +231,16 @@ LEFT JOIN (
              LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
             WHERE 1=1
             AND valor>0
-            AND (
-                (LOWER(referencia_1) LIKE '%traslado de fondos%'  OR LOWER(referencia_1) LIKE '%corred%davivien%' OR LOWER(referencia_1) LIKE '%fondos de valores%') OR
-                (LOWER(referencia_2) LIKE '%traslado de fondos%'  OR LOWER(referencia_2) LIKE '%corred%davivien%' OR LOWER(referencia_2) LIKE '%fondos de valores%') OR
-                (LOWER(referencia_3) LIKE '%traslado de fondos%'  OR LOWER(referencia_3) LIKE '%corred%davivien%' OR LOWER(referencia_3) LIKE '%fondos de valores%') OR
-                (LOWER(referencia_4) LIKE '%traslado de fondos%'  OR LOWER(referencia_4) LIKE '%corred%davivien%' OR LOWER(referencia_4) LIKE '%fondos de valores%') )
+            AND ( 
+                (LOWER(tipo_de_transaccion) LIKE '%traslado%') OR
+                ( LOWER(referencia_1) LIKE '%traslado de fondos%'   OR LOWER(referencia_1) LIKE '%corred%davivien%' OR LOWER(referencia_1) LIKE '%fondos de valores%') OR
+                ( LOWER(referencia_2) LIKE '%traslado de fondos%'   OR LOWER(referencia_2) LIKE '%corred%davivien%' OR LOWER(referencia_2) LIKE '%fondos de valores%') OR
+                ( LOWER(referencia_3) LIKE '%traslado de fondos%'   OR LOWER(referencia_3) LIKE '%corred%davivien%' OR LOWER(referencia_3) LIKE '%fondos de valores%') OR
+                ( LOWER(referencia_4) LIKE '%traslado de fondos%'   OR LOWER(referencia_4) LIKE '%corred%davivien%' OR LOWER(referencia_4) LIKE '%fondos de valores%')
+                )   
+          
 
-
-          UNION ALL 
+           UNION ALL 
 
            SELECT
            DISTINCT
@@ -193,7 +274,13 @@ LEFT JOIN (
              LEFT JOIN cartera AS ca ON  CONCAT(b.nid,"_", b.valor)=ca.llave AND DATE_TRUNC(b.fecha, MONTH)=DATE_TRUNC(SAFE_CAST(ca.fecha AS DATE),MONTH)
             WHERE 1=1
             AND valor>0
-            AND  (LOWER(tipo_de_transaccion) LIKE '%pago de prov renta 4 &%')
+            AND  TRIM(LOWER(tipo_de_transaccion)) LIKE  '%pago%%prov%%renta%'
+            -- AND  tipo_de_transaccion LIKE 'PAGO%DE%PROV%RENTA%4%&%GLOBA%'
+            
+          
+          
+          
+          
           ) AS en  ON  en.llave=CONCAT(a.nid,"_", a.valor,"_",a.fecha)
 
 )
@@ -258,10 +345,12 @@ UNION ALL
    base_flujo_caja  AS b 
   WHERE 1=1
   AND valor<0
-  AND ((LOWER(referencia_1) LIKE '%notaria%' OR LOWER(referencia_1) LIKE '%pago%gasto%nota%' OR LOWER(referencia_1) LIKE '%costos no%' OR LOWER(referencia_1) LIKE '%pago beneficiencia%' OR LOWER(referencia_1) LIKE '%pago rentas departamentales%' OR LOWER(referencia_1) LIKE '%bono por escr%' ) OR
-       (LOWER(referencia_2) LIKE '%notaria%' OR LOWER(referencia_2) LIKE '%pago%gasto%nota%' OR LOWER(referencia_2) LIKE '%costos no%' OR LOWER(referencia_2) LIKE '%pago beneficiencia%' OR LOWER(referencia_2) LIKE '%pago rentas departamentales%' OR LOWER(referencia_2) LIKE '%bono por escr%' ) OR
-       (LOWER(referencia_3) LIKE '%notaria%' OR LOWER(referencia_3) LIKE '%pago%gasto%nota%' OR LOWER(referencia_3) LIKE '%costos no%' OR LOWER(referencia_3) LIKE '%pago beneficiencia%' OR LOWER(referencia_3) LIKE '%pago rentas departamentales%' OR LOWER(referencia_3) LIKE '%bono por escr%' ) OR
-       (LOWER(referencia_4) LIKE '%notaria%' OR LOWER(referencia_4) LIKE '%pago%gasto%nota%' OR LOWER(referencia_4) LIKE '%costos no%' OR LOWER(referencia_4) LIKE '%pago beneficiencia%' OR LOWER(referencia_4) LIKE '%pago rentas departamentales%' OR LOWER(referencia_4) LIKE '%bono por escr%' ))
+  AND ((LOWER(referencia_1) LIKE '%notaria%'OR LOWER(referencia_1) LIKE '%rentas departamentales%' OR LOWER(referencia_1) LIKE '%pago%gasto%nota%' OR LOWER(referencia_1) LIKE '%costos no%' OR LOWER(referencia_1) LIKE '%pago beneficiencia%' OR LOWER(referencia_1) LIKE '%pago rentas departamentales%' OR LOWER(referencia_1) LIKE '%bono por escr%' ) OR
+       (LOWER(referencia_2) LIKE '%notaria%'OR LOWER(referencia_2) LIKE '%rentas departamentales%' OR LOWER(referencia_2) LIKE '%pago%gasto%nota%' OR LOWER(referencia_2) LIKE '%costos no%' OR LOWER(referencia_2) LIKE '%pago beneficiencia%' OR LOWER(referencia_2) LIKE '%pago rentas departamentales%' OR LOWER(referencia_2) LIKE '%bono por escr%' ) OR
+       (LOWER(referencia_3) LIKE '%notaria%'OR LOWER(referencia_3) LIKE '%rentas departamentales%' OR LOWER(referencia_3) LIKE '%pago%gasto%nota%' OR LOWER(referencia_3) LIKE '%costos no%' OR LOWER(referencia_3) LIKE '%pago beneficiencia%' OR LOWER(referencia_3) LIKE '%pago rentas departamentales%' OR LOWER(referencia_3) LIKE '%bono por escr%' ) OR
+       (LOWER(referencia_4) LIKE '%notaria%'OR LOWER(referencia_4) LIKE '%rentas departamentales%' OR LOWER(referencia_4) LIKE '%pago%gasto%nota%' OR LOWER(referencia_4) LIKE '%costos no%' OR LOWER(referencia_4) LIKE '%pago beneficiencia%' OR LOWER(referencia_4) LIKE '%pago rentas departamentales%' OR LOWER(referencia_4) LIKE '%bono por escr%' ))
+
+
 
 UNION ALL 
 
@@ -365,30 +454,8 @@ UNION ALL
   AND valor<0
   AND (LOWER(referencia_1) LIKE '%estudio de titulos%' OR LOWER(referencia_2) LIKE '%estudio de titulos%' OR LOWER(referencia_3) LIKE '%estudio de titulos%' OR LOWER(referencia_4) LIKE '%estudio de titulos%')
 
-UNION ALL
 
-  SELECT
-    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
-    -- b.*,
-    'Beneficencia y registro' AS clasificacion_salidas,
-  FROM
-   base_flujo_caja  AS b 
-  WHERE 1=1
-  AND valor<0 
-  AND (LOWER(referencia_1) LIKE '%rentas departamentales%' OR LOWER(referencia_2) LIKE '%rentas departamentales%' OR LOWER(referencia_3) LIKE '%rentas departamentales%' OR LOWER(referencia_4) LIKE '%rentas departamentales%')
       
-      
-UNION ALL
-
-  SELECT
-    CONCAT(nid,"_", b.valor,"_",b.fecha) AS llave, 
-    -- b.*,
-    'Beneficencia y registro' AS clasificacion_salidas,
-  FROM
-   base_flujo_caja  AS b 
-  WHERE 1=1
-  AND valor<0 
-  AND (LOWER(referencia_1) LIKE '%rentas departamentales%' OR LOWER(referencia_2) LIKE '%rentas departamentales%' OR LOWER(referencia_3) LIKE '%rentas departamentales%' OR LOWER(referencia_4) LIKE '%rentas departamentales%')
         
         
 UNION ALL
@@ -747,7 +814,31 @@ UNION ALL
   ) )
 
 
+#### DEVOLUCION DE TRANSACIONES EN LOS INGRESOS
+
+         UNION ALL 
+         SELECT
+         CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave, 
+         'Arras Venta - Desistimientos'
+         FROM
+            base_flujo_caja  AS b  
+           WHERE 1=1
+           AND valor<0
+           AND (
+               (LOWER(referencia_1) LIKE '%desistimiento%%nid%'OR TRIM(LOWER(referencia_1)) LIKE 'desist%miento%' OR LOWER(referencia_1) LIKE '%dev%%saldo%%favor%' OR LOWER(referencia_1) LIKE '%desistimiento%')  OR
+               (LOWER(referencia_2) LIKE '%desistimiento%%nid%'OR TRIM(LOWER(referencia_2)) LIKE 'desist%miento%' OR LOWER(referencia_2) LIKE '%dev%%saldo%%favor%' OR LOWER(referencia_2) LIKE '%desistimiento%')  OR
+               (LOWER(referencia_3) LIKE '%desistimiento%%nid%'OR TRIM(LOWER(referencia_3)) LIKE 'desist%miento%' OR LOWER(referencia_3) LIKE '%dev%%saldo%%favor%' OR LOWER(referencia_3) LIKE '%desistimiento%')  OR
+               (LOWER(referencia_4) LIKE '%desistimiento%%nid%'OR TRIM(LOWER(referencia_4)) LIKE 'desist%miento%' OR LOWER(referencia_4) LIKE '%dev%%saldo%%favor%' OR LOWER(referencia_4) LIKE '%desistimiento%') )
+
+
+
+
+
   ) AS en  ON  en.llave=CONCAT(a.nid,"_", a.valor,"_",a.fecha)
+
+
+
+
 
   )
 
@@ -758,10 +849,11 @@ UNION ALL
 -- FROM
 --  salidas
 --  GROUP BY 1
-
+,base_final AS (
 
 
   SELECT
+  ROW_NUMBER() OVER(PARTITION BY CONCAT(b.nid,"_", b.valor,"_",b.fecha)) AS row,
   CONCAT(b.nid,"_", b.valor,"_",b.fecha) AS llave_base_flujo,
   s.llave AS llave_cartera,
   b.*,
@@ -782,9 +874,18 @@ UNION ALL
  LEFT JOIN `papyrus-delivery-data.corp_gov_global.input_clasificacion_flujo_caja_co` AS cfja ON s.clasificacion_salidas=cfja.detalle_rubro
  LEFT JOIN `papyrus-delivery-data.corp_gov_global.input_clasificacion_flujo_caja_co` AS cfjb ON b.descripcion=cfjb.detalle_rubro
 WHERE 1=1
-  -- -- AND LOWER(descripcion) ='arras compra'
-  -- AND (TRIM(LOWER(descripcion))!=TRIM(LOWER(clasificacion_salidas)) OR TRIM(LOWER(clasificacion_salidas)) IS NULL) 
-  -- AND DATE_TRUNC(b.fecha,MONTH)='2024-01-01'
+  ORDER BY CONCAT(b.nid,"_", b.valor,"_",b.fecha) DESC)
 
 
-  -- GROUP BY 1,2
+  SELECT
+  *
+  FROM
+base_final
+WHERE 1=1
+-- AND llave_base_flujo='9991570466_-901685.4_2023-12-05'
+-- AND inconsistencias_validacion=1
+-- AND  descripcion='Arras Venta'
+-- AND  clasificacion_salidas= 'Saldo Venta'
+-- AND DATE_TRUNC(fecha,MONTH)='2024-02-01'
+-- -- AND descripcion='Devolución de obligaciones R4'
+-- -- 
